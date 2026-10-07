@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "拉取 Google 共享日曆，讓角色知道你的日程安排",
   "author": "予佟",
-  "entry": "plugin.js",
+  "entry": "https://raw.githubusercontent.com/jiwanhe/roche_daily/refs/heads/main/calendar-plugin.js",
   "hash": "",
   "permissions": [
     "storage",
