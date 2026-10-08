@@ -2,7 +2,7 @@
   "id": "roche-calendar-sync",
   "name": "日曆同步",
   "version": "1.0.0",
-  "description": "拉取 Google 共享日曆，讓角色知道你的日程安排",
+  "description": "https://raw.githubusercontent.com/jiwanhe/roche_daily/refs/heads/main/calendar-plugin.js",
   "author": "予佟",
   "entry": "plugin.js",
   "hash": "",
