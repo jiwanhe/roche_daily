@@ -73,7 +73,7 @@ const app={
     // ── 拉取 ──
     async function fetchCalendar(){
       const url=S.cfg.scriptUrl;
-      if(!url){S.fetchMsg='https://script.google.com/macros/s/AKfycbwfPR4qx0CWsOlE9X45IkcZRgBGsBLypcMkZ42bJ8XzuvVK40xMoQgA-EHyIXD3vM7r/exec';S.fetchErr=true;render();return;}
+      if(!url){S.fetchMsg='https://script.google.com/macros/s/AKfycbxjfUpvFHxlHUc-2cyfy-ipJPbvEsS18CuMzjSliG0LzUG1oBHymoJfmOqekUpNZcM-/exec';S.fetchErr=true;render();return;}
       S.fetching=true;S.fetchMsg='';render();
       try{
         const res=await fetch(url);
