@@ -97,7 +97,7 @@ const app={
     // ── 拉取 ──
     async function fetchCalendar(){
       const url=S.cfg.scriptUrl;
-      if(!url){S.fetchMsg='https://script.google.com/macros/s/AKfycbwP42YW-b65xPIqfVgtc8t5FRATq6ccwwxOBWmzsmbu0W5T3114z0sjRrz5Q0pOL6FR/exec';S.fetchErr=true;render();return;}
+      if(!url){S.fetchMsg='請先到設定填入 Google Apps Script URL';S.fetchErr=true;render();return;}
       S.fetching=true;S.fetchMsg='';render();
       try{
         const res=await gasFetch(url);
