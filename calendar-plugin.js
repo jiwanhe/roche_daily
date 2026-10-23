@@ -73,7 +73,7 @@ const app={
     // ── 拉取 ──
     async function fetchCalendar(){
       const url=S.cfg.scriptUrl;
-      if(!url){S.fetchMsg='請先到設定填入 Google Apps Script URL';S.fetchErr=true;render();return;}
+      if(!url){S.fetchMsg='https://script.google.com/macros/s/AKfycbzJsywQ47aaWlWiP4WyYdKew7OGlv58eJr8r0LQKbu40MIrsdnAhpdbt79n9aPA5F3i/exec';S.fetchErr=true;render();return;}
       S.fetching=true;S.fetchMsg='';render();
       try{
         const res=await fetch(url);
