@@ -26,8 +26,6 @@ const app={
       fetching:false,fetchMsg:'',fetchErr:false,
       syncMsg:'',syncErr:false,
       pendingAdds:[],   // 從對話掃描到的待新增事件
-      selectedAdds:{},  // 勾選狀態 {index: true/false}
-      syncedKeys:[],    // 已同步過的行程 key 列表（title+date）
       scanning:false,
       addMsg:'',addErr:false,
       charList:[],convList:[],
@@ -38,7 +36,6 @@ const app={
     Object.assign(S.cfg,(await load('cal2_cfg'))||{});
     S.events=(await load('cal2_events'))||[];
     S.lastFetched=(await load('cal2_lastFetch'))||'';
-    S.syncedKeys=(await load('cal2_synced'))||[];
     const saveCfg=()=>sv('cal2_cfg',S.cfg);
     const saveEvents=()=>{sv('cal2_events',S.events);sv('cal2_lastFetch',S.lastFetched);};
 
@@ -98,11 +95,20 @@ const app={
       const g=groupEvents();
       const today=ds(new Date());
       let t=`📅 ${S.cfg.userName||'我'}的近期日程（${today}）\n`;
-      if(g.today.length){t+=`\n【今天】\n`;g.today.forEach(ev=>{t+=`• ${ev.isAllDay?'全天':fmtTime(ev.startTime)+'~'+fmtTime(ev.endTime)} ${ev.title}${ev.location?' @ '+ev.location:''}\n`;});}
+      function evLine(ev,showDate){
+        let l='• ';
+        if(showDate)l+=fmtDate(ev.startTime)+' ';
+        l+=ev.isAllDay?'全天':fmtTime(ev.startTime)+(ev.endTime?'~'+fmtTime(ev.endTime):'');
+        l+=' '+ev.title;
+        if(ev.location)l+=' @ '+ev.location;
+        if(ev.description)l+='\n  備註：'+ev.description.replace(/\n/g,' ').slice(0,120);
+        return l+'\n';
+      }
+      if(g.today.length){t+=`\n【今天】\n`;g.today.forEach(ev=>{t+=evLine(ev,false);});}
       else t+=`\n【今天】沒有行程\n`;
-      if(g.tomorrow.length){t+=`\n【明天】\n`;g.tomorrow.forEach(ev=>{t+=`• ${ev.isAllDay?'全天':fmtTime(ev.startTime)} ${ev.title}${ev.location?' @ '+ev.location:''}\n`;});}
-      if(g.thisWeek.length){t+=`\n【本週】\n`;g.thisWeek.forEach(ev=>{t+=`• ${fmtDate(ev.startTime)} ${ev.isAllDay?'全天':fmtTime(ev.startTime)} ${ev.title}\n`;});}
-      if(g.later.length){t+=`\n【之後】\n`;g.later.slice(0,15).forEach(ev=>{t+=`• ${fmtDate(ev.startTime)} ${ev.title}\n`;});}
+      if(g.tomorrow.length){t+=`\n【明天】\n`;g.tomorrow.forEach(ev=>{t+=evLine(ev,false);});}
+      if(g.thisWeek.length){t+=`\n【本週】\n`;g.thisWeek.forEach(ev=>{t+=evLine(ev,true);});}
+      if(g.later.length){t+=`\n【之後】\n`;g.later.slice(0,15).forEach(ev=>{t+=evLine(ev,true);});}
       return t;
     }
 
@@ -140,13 +146,11 @@ const app={
       }
     }
 
-    // ── 生成行程的唯一 key ──
-    function evKey(ev){return(ev.title||'').trim()+'|'+(ev.date||ev.startTime||'').slice(0,10)}
-
     // ── 掃描對話：找 char 用 [CalAdd] 格式新增的行程 ──
     async function scanForAdds(){
-      S.scanning=true;S.addMsg='';S.pendingAdds=[];S.selectedAdds={};render();
+      S.scanning=true;S.addMsg='';S.pendingAdds=[];render();
       try{
+        // 抓所有相關對話的近期訊息
         const allMsgs=[];
         const convIds=S.convList.filter(c=>{const ci=c.contactId||'';const ps=c.participants||[];const cid=c.conversationId||c.id||'';return ci===S.cfg.charId||ps.includes(S.cfg.charId)||cid.startsWith('group_');}).map(c=>c.conversationId||c.id);
         if(convIds.length){
@@ -157,53 +161,44 @@ const app={
         }else{
           try{const stm=await roche.memory.getShortTerm();if(Array.isArray(stm))allMsgs.push(...stm);}catch(_){}
         }
+        // 在 char 的訊息裡找 [CalAdd]...[/CalAdd]
         const re=/\[CalAdd\]([\s\S]*?)\[\/CalAdd\]/g;
         const found=[];
         allMsgs.filter(m=>!m.isMe&&m.text).forEach(m=>{
           let match;
           while((match=re.exec(m.text))!==null){
-            try{const ev=JSON.parse(match[1].trim());if(ev.title)found.push({...ev,sourceMsg:m.text.slice(0,80),timestamp:m.timestamp});}catch(_){}
+            try{
+              const ev=JSON.parse(match[1].trim());
+              if(ev.title)found.push({...ev,sourceMsg:m.text.slice(0,80),timestamp:m.timestamp});
+            }catch(_){}
           }
         });
-        // 去重
+        // 去重（同 title+date 視為同一個）
         const seen=new Set();
-        S.pendingAdds=found.filter(ev=>{const k=evKey(ev);if(seen.has(k))return false;seen.add(k);return true;});
-        // 標記已同步的，預設不勾選；未同步的預設勾選
-        S.pendingAdds.forEach((ev,i)=>{
-          ev._synced=S.syncedKeys.includes(evKey(ev));
-          S.selectedAdds[i]=!ev._synced; // 已同步的預設不勾
-        });
-        const newCount=S.pendingAdds.filter(e=>!e._synced).length;
-        const syncedCount=S.pendingAdds.filter(e=>e._synced).length;
-        S.addMsg=S.pendingAdds.length
-          ?`找到 ${S.pendingAdds.length} 個行程（${newCount} 新 / ${syncedCount} 已同步）`
-          :'沒有找到 [CalAdd] 格式的行程';
+        S.pendingAdds=found.filter(ev=>{const k=(ev.title||'')+(ev.date||ev.startTime||'');if(seen.has(k))return false;seen.add(k);return true;});
+        S.addMsg=S.pendingAdds.length?`找到 ${S.pendingAdds.length} 個待新增行程`:'沒有找到 [CalAdd] 格式的行程';
         S.addErr=!S.pendingAdds.length;
       }catch(e){S.addMsg='掃描失敗：'+e.message;S.addErr=true;}
       S.scanning=false;render();
     }
 
-    // ── 確認新增：只送出勾選的行程 ──
+    // ── 確認新增行程到 Google Calendar ──
     async function confirmAddEvents(){
-      const selected=S.pendingAdds.filter((_,i)=>S.selectedAdds[i]);
-      if(!selected.length){toast('請至少勾選一個行程');return;}
+      if(!S.pendingAdds.length)return;
       const url=S.cfg.scriptUrl;
       if(!url){S.addMsg='請先設定 Apps Script URL';S.addErr=true;render();return;}
       try{
-        const body={events:selected};
+        const body={events:S.pendingAdds};
         if(S.cfg.secretKey)body.key=S.cfg.secretKey;
         const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        // Google Apps Script redirects POST, need to handle
         const data=await res.json().catch(()=>({success:false,error:'回應不是 JSON'}));
         if(!data.success&&!data.created)throw new Error(data.error||'新增失敗');
-        // 記錄已同步的 key
-        selected.forEach(ev=>{const k=evKey(ev);if(!S.syncedKeys.includes(k))S.syncedKeys.push(k);});
-        sv('cal2_synced',S.syncedKeys);
-        // 更新 UI
         S.addMsg=`✅ 成功新增 ${data.created||0} 個行程${data.failed?' / '+data.failed+' 個失敗':''}`;
         S.addErr=false;
-        // 更新 pendingAdds 裡的 _synced 狀態
-        S.pendingAdds.forEach((ev,i)=>{if(S.selectedAdds[i])ev._synced=true;S.selectedAdds[i]=false;});
+        S.pendingAdds=[];
         toast('📅 行程已新增到 Google 日曆');
+        // 自動重新拉取以顯示新事件
         await fetchCalendar();
       }catch(e){S.addMsg='新增失敗：'+e.message;S.addErr=true;}
       render();
@@ -275,15 +270,11 @@ const app={
       if(S.addMsg)h+=`<div class="ca-msg" style="color:${S.addErr?'#996600':'#2d8a5f'}">${esc(S.addMsg)}</div>`;
       // Pending adds from char
       if(S.pendingAdds.length){
-        const selCount=Object.values(S.selectedAdds).filter(Boolean).length;
         h+=`<div class="ca-pending"><div class="ca-pending-title">📌 ${S.cfg.charName||'角色'} 要幫你新增的行程</div>`;
-        h+=`<div style="display:flex;gap:8px;margin-bottom:8px"><button data-a="select-all-adds" style="font-size:11px;padding:4px 10px;border-radius:8px;background:#fff;border:1px solid ${BD};cursor:pointer;color:${T2}">全選未同步</button><button data-a="select-none-adds" style="font-size:11px;padding:4px 10px;border-radius:8px;background:#fff;border:1px solid ${BD};cursor:pointer;color:${T2}">全不選</button></div>`;
         S.pendingAdds.forEach((ev,i)=>{
-          const checked=S.selectedAdds[i]?'checked':'';
-          const synced=ev._synced;
-          h+=`<div class="ca-pending-item" style="${synced?'opacity:.6':''}"><label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" data-a="toggle-add" data-i="${i}" ${checked} style="margin-top:3px;flex-shrink:0"><div style="flex:1"><div class="title">${esc(ev.title)}${synced?' <span style="font-size:10px;background:#e8f5e9;color:#2d8a5f;padding:1px 6px;border-radius:4px;font-weight:400">已同步</span>':''}</div><div class="meta">${esc(ev.date||ev.startTime||'')} ${ev.startTime&&!ev.isAllDay?fmtTime(ev.startTime):'全天'}${ev.location?' · '+esc(ev.location):''}</div></div></label></div>`;
+          h+=`<div class="ca-pending-item"><div class="title">${esc(ev.title)}</div><div class="meta">${esc(ev.date||ev.startTime||'')} ${ev.startTime&&!ev.isAllDay?fmtTime(ev.startTime):'全天'}${ev.location?' · '+esc(ev.location):''}</div></div>`;
         });
-        h+=`<button data-a="confirm-add" style="width:100%;padding:10px;border-radius:12px;background:${selCount?'#2d8a5f':'#ccc'};color:#fff;border:none;font-weight:700;font-size:14px;margin-top:8px;cursor:pointer" ${selCount?'':'disabled'}>✅ 新增勾選的 ${selCount} 個行程到 Google 日曆</button></div>`;
+        h+=`<button data-a="confirm-add" style="width:100%;padding:10px;border-radius:12px;background:#2d8a5f;color:#fff;border:none;font-weight:700;font-size:14px;margin-top:8px;cursor:pointer">✅ 確認全部新增到 Google 日曆</button></div>`;
       }
       // Setup guide
       if(!S.cfg.scriptUrl){
@@ -297,7 +288,7 @@ const app={
         (past?list:list).forEach(ev=>{
           const timeStr=ev.isAllDay?'全天':fmtTime(ev.startTime);
           const dayStr=fmtDate(ev.startTime).replace(/.*（/,'').replace('）','');
-          h+=`<div class="ca-ev${past?' past':''}"><div class="ca-ev-time">${dayStr}<br>${timeStr}</div><div class="ca-ev-body"><div class="ca-ev-title">${esc(ev.title)}</div>${ev.location?`<div class="ca-ev-loc">📍 ${esc(ev.location)}</div>`:''}</div></div>`;
+          h+=`<div class="ca-ev${past?' past':''}"><div class="ca-ev-time">${dayStr}<br>${timeStr}</div><div class="ca-ev-body"><div class="ca-ev-title">${esc(ev.title)}</div>${ev.location?`<div class="ca-ev-loc">📍 ${esc(ev.location)}</div>`:''}${ev.description?`<div class="ca-ev-loc" style="color:${T2}">📝 ${esc(ev.description.slice(0,100))}</div>`:''}</div></div>`;
         });
         h+=`</div>`;
       });
@@ -349,5 +340,5 @@ const app={
     container.replaceChildren();
   }
 };
-window.RochePlugin.register({id:'roche-calendar-sync',name:'日曆同步',version:'3.0.0',description:'拉取 Google 日曆，讓角色幫你管理日程',author:'予佟',apps:[app]});
+window.RochePlugin.register({id:'roche-calendar-sync',name:'日曆同步',version:'2.0.0',description:'拉取 Google 日曆，讓角色幫你管理日程',author:'予佟',apps:[app]});
 })();
