@@ -16,7 +16,7 @@ const app={
     // char 新增行程的格式標記（寫進 memory 讓 char 學會用）
     const ADD_TAG_OPEN='[CalAdd]';
     const ADD_TAG_CLOSE='[/CalAdd]';
-    const ADD_FORMAT_EXAMPLE='[CalAdd]{"title":"牙醫回診","date":"2026-09-05","startTime":"2026-09-05T14:00","endTime":"2026-09-05T15:00","location":"台北長庚"}[/CalAdd]';
+    const ADD_FORMAT_EXAMPLE='[CalAdd]{"title":"牙醫回診","date":"2026-09-05","startTime":"2026-09-05T14:00","endTime":"2026-09-05T15:00","location":"台北長庚","description":"帶健保卡和上次的X光片"}[/CalAdd]';
 
     // ── State ──
     const S={
@@ -143,7 +143,7 @@ const app={
       const convId=S.cfg.convId;
       if(!convId){S.syncMsg='請到設定選擇對話';S.syncErr=true;render();return;}
       // 加上「char 可以幫 user 新增行程」的格式指令
-      const fullText=text+`\n\n---\n[系統提示] 如果${S.cfg.userName||'User'}需要你幫忙新增行程到日曆，請用以下格式回覆，我的日曆系統會自動識別並新增：\n格式：${ADD_FORMAT_EXAMPLE}\n必要欄位：title、date（YYYY-MM-DD）。選填：startTime、endTime（ISO格式）、location。全天事件只需 title+date。`;
+      const fullText=text+`\n\n---\n[系統提示] 如果${S.cfg.userName||'User'}需要你幫忙新增行程到日曆，請用以下格式回覆，我的日曆系統會自動識別並新增：\n格式：${ADD_FORMAT_EXAMPLE}\n必要欄位：title、date（YYYY-MM-DD）。選填：startTime、endTime（ISO格式）、location、description（備註提醒）。全天事件只需 title+date。`;
       try{
         const utcStr=toRocheUTC(new Date());
         await roche.memory.write({
