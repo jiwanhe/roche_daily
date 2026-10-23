@@ -70,13 +70,37 @@ const app={
       return{today,tomorrow,thisWeek,later,past};
     }
 
+    // ── Google Apps Script fetch（處理 redirect）──
+    async function gasFetch(url,opts){
+      // Google Apps Script 部署的 Web App 會 302 redirect 到 googleusercontent.com
+      // 某些 WebView 環境下 fetch 不會自動 follow，或 redirect 後被 CORS 擋
+      // 策略：先試正常 fetch，失敗就改用 no-redirect 手動 follow
+      try{
+        const res=await fetch(url,{redirect:'follow',...opts});
+        if(res.ok)return res;
+        if(res.type==='opaqueredirect'||res.status===302||res.status===301){
+          const loc=res.headers.get('location');
+          if(loc)return fetch(loc,opts);
+        }
+        return res;
+      }catch(e){
+        // 有些環境 redirect 直接 throw TypeError，試手動 follow
+        try{
+          const res2=await fetch(url,{redirect:'manual',...opts});
+          const loc=res2.headers.get('location');
+          if(loc)return fetch(loc,opts);
+          return res2;
+        }catch(_){throw e;}
+      }
+    }
+
     // ── 拉取 ──
     async function fetchCalendar(){
       const url=S.cfg.scriptUrl;
-      if(!url){S.fetchMsg='https://script.google.com/macros/s/AKfycbxjfUpvFHxlHUc-2cyfy-ipJPbvEsS18CuMzjSliG0LzUG1oBHymoJfmOqekUpNZcM-/exec';S.fetchErr=true;render();return;}
+      if(!url){S.fetchMsg='https://script.google.com/macros/s/AKfycbwP42YW-b65xPIqfVgtc8t5FRATq6ccwwxOBWmzsmbu0W5T3114z0sjRrz5Q0pOL6FR/exec';S.fetchErr=true;render();return;}
       S.fetching=true;S.fetchMsg='';render();
       try{
-        const res=await fetch(url);
+        const res=await gasFetch(url);
         if(!res.ok)throw new Error('HTTP '+res.status);
         const data=await res.json();
         if(!data.success)throw new Error(data.error||'回應格式錯誤');
@@ -190,7 +214,7 @@ const app={
       try{
         const body={events:S.pendingAdds};
         if(S.cfg.secretKey)body.key=S.cfg.secretKey;
-        const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        const res=await gasFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
         // Google Apps Script redirects POST, need to handle
         const data=await res.json().catch(()=>({success:false,error:'回應不是 JSON'}));
         if(!data.success&&!data.created)throw new Error(data.error||'新增失敗');
@@ -307,6 +331,7 @@ const app={
       h+=`<label class="ca-sl">你的名字</label><input class="ca-si" data-f="userName" value="${esc(c.userName)}">`;
       h+=`<button data-a="save-set" class="ca-sbtn">儲存設定</button>`;
       h+=`<button data-a="clear" class="ca-sbtn" style="background:#fff;color:#CC3333;border:1px solid #CC3333;margin-top:8px">🗑️ 清除事件</button>`;
+      h+=`<button data-a="debug" class="ca-sbtn" style="background:#fff;color:${T2};border:1px solid ${BD};margin-top:8px">🔍 查看原始資料（Debug）</button>`;
       h+=`</div></div>`;
       return h;
     }
@@ -328,6 +353,14 @@ const app={
         saveCfg();S.showSettings=false;toast('已儲存');render();
       }
       else if(a==='clear'){S.events=[];S.lastFetched='';saveEvents();S.showSettings=false;toast('已清除');render();}
+      else if(a==='debug'){
+        S.showSettings=false;
+        const raw=S.events.slice(0,5).map(ev=>JSON.stringify(ev,null,2)).join('\n---\n');
+        const d=document.createElement('div');d.style.cssText='position:absolute;inset:0;z-index:300;background:#fff;overflow:auto;padding:14px;font-size:11px;font-family:monospace;white-space:pre-wrap';
+        d.textContent='前 5 筆原始資料：\n\n'+raw+'\n\n（點任意處關閉）';
+        d.onclick=()=>d.remove();
+        root.appendChild(d);
+      }
     }
     root.addEventListener('click',onClick);
     render();
